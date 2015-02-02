@@ -1,5 +1,5 @@
 #include "position.h"
-
+#include <QDataStream>
 
 Position Position::targetLocation(Direction direction, int distance) const {
 	switch (direction) {
@@ -14,4 +14,16 @@ Position Position::targetLocation(Direction direction, int distance) const {
 		default:
 			return *this;
 	}
+}
+
+
+QDataStream &operator <<(QDataStream &out, const Position &pos) {
+	out << pos.x << pos.y;
+	return out;
+}
+
+
+QDataStream &operator >>(QDataStream &in, Position &pos) {
+	in >> pos.x >> pos.y;
+	return in;
 }

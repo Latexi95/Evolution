@@ -12,7 +12,8 @@ class Action {
 			Move,
 			Attack,
 			Eat,
-			Heal
+			Heal,
+			Reproduce
 		};
 
 		Action(Entity *entity, EntityProperty speed);
@@ -67,6 +68,14 @@ class HealAction : public Action {
 		HealAction(Entity *entity, EntityProperty speed);
 		~HealAction();
 		Type type() const { return Heal; }
+		EntityProperty exec(Map *map) const;
+};
+
+class ReproduceAction : public Action {
+	public:
+		ReproduceAction(Entity *entity, EntityProperty speed);
+		~ReproduceAction();
+		Type type() const { return Reproduce; }
 		EntityProperty exec(Map *map) const;
 };
 

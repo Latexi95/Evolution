@@ -6,6 +6,7 @@
 #include "enums.h"
 #include <QHash>
 #include <QVector>
+#include <QMap>
 
 class Action;
 class Map;
@@ -32,6 +33,7 @@ enum class OpCode : quint8 {
 	GetPower,
 	GetHealt,
 	GetMaxHealt,
+	GetEnergy,
 	Eat,
 	Move,
 	Attack,
@@ -50,6 +52,11 @@ enum class OpCode : quint8 {
 
 	ConditionalJump,
 	Jump,
+
+	Reproduce,
+
+	LoadEntityStore,
+	CopyEntityStore,
 
 
 	MaxOpCode
@@ -91,8 +98,18 @@ class Entity {
 
 		quint64 lifeTime() const;
 
+		quint64 generation() const;
+		void setGeneration(quint64 gen);
+
+		void save(QDataStream &stream, int format) const;
+
+		void load(QDataStream &stream, int format);
+
+
+		EntityProperty loadStore(EntityProperty::ValueType id) const;
+		void saveStore(EntityProperty::ValueType id, const EntityProperty &val);
 	private:
-		const Instruction &instruction();
+		const Instruction &instruction() const;
 		void nextInstruction();
 		Action *exec(const Map *map, const int maxInstruction, int &instructionCounter);
 		Action *execInstruction(const Map *map, const Instruction &ins);
@@ -112,10 +129,29 @@ class Entity {
 		EntityProperty mSecondaryRegister;
 		quint64 mLifeTime;
 
-		QHash<EntityProperty::ValueType, EntityProperty> mData;
+		QMap<EntityProperty::ValueType, EntityProperty> mData;
 
 		QVector<Instruction> mByteCode;
-		QVector<Instruction>::ConstIterator mExectionPoint;
+		int mExecutionPoint;
+
+		quint64 mGeneration;
 };
 
+inline const Instruction &Entity::instruction() const {
+	return mByteCode[mExecutionPoint];
+}
+
+inline void Entity::nextInstruction() {
+	++mExecutionPoint;
+	if (mExecutionPoint == mByteCode.size()) {
+		mExecutionPoint = 0;
+	}
+}
+
+inline Position Entity::targetMarkerPosition() const {
+	return mPosition + mTargetMarker;
+}
+
+QDataStream &operator << (QDataStream &out, const Instruction &ins);
+QDataStream &operator >> (QDataStream &in, Instruction &ins);
 #endif // ENTITY_H

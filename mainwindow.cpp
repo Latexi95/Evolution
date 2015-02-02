@@ -6,9 +6,10 @@
 #include "action.h"
 #include <QThreadPool>
 #include <QTimer>
+#include <map>
 #include "bytecodedialog.h"
 
-const int entitiesPerTask = 2000;
+const int entitiesPerTask = 1500;
 
 MainWindow::MainWindow(QWidget *parent) :
 	QMainWindow(parent),
@@ -17,12 +18,13 @@ MainWindow::MainWindow(QWidget *parent) :
 	mUpdateTimer = new QTimer(this);
 	connect(mUpdateTimer, &QTimer::timeout, this, &MainWindow::updateSimulation);
 	mUpdateTimer->start(0);
+	mSaveNum = 0;
 
+	QThreadPool::globalInstance()->setExpiryTimeout(-1);
 
 	Map *map = new Map(500, 300);
 	map->randomFillMapWithEntities(50);
 	ui->mapViewWidget->setMap(map);
-	mTicks = 0;
 	mRunningAction = ui->mainToolBar->addAction(tr("Running"));
 	mRunningAction->setCheckable(true);
 	mRunningAction->setChecked(true);
@@ -31,11 +33,15 @@ MainWindow::MainWindow(QWidget *parent) :
 			mUpdateTimer->start(0);
 			mShowLongestByteCode->setEnabled(false);
 			mShowOldestByteCode->setEnabled(false);
+			mSave->setEnabled(false);
+			mLoad->setEnabled(false);
 		}
 		else {
 			mUpdateTimer->stop();
 			mShowLongestByteCode->setEnabled(true);
 			mShowOldestByteCode->setEnabled(true);
+			mSave->setEnabled(true);
+			mLoad->setEnabled(true);
 		}
 	});
 
@@ -62,6 +68,15 @@ MainWindow::MainWindow(QWidget *parent) :
 		ui->mapViewWidget->setDrawFlags(ui->mapViewWidget->drawFlags() ^ NoEntities);
 	});
 
+	mSave = ui->mainToolBar->addAction(tr("Save"));
+	mSave->setEnabled(false);
+	connect(mSave, &QAction::triggered, this, &MainWindow::save);
+
+	mLoad = ui->mainToolBar->addAction(tr("Load"));
+	mLoad->setEnabled(false);
+	connect(mLoad, &QAction::triggered, this, &MainWindow::load);
+
+
 }
 
 MainWindow::~MainWindow() {
@@ -85,7 +100,9 @@ void MainWindow::updateSimulation() {
 	map->updateFoodLevels();
 	QVector<Entity*> taskData;
 	QVector<EntityUpdateTask*> tasks;
+	quint64 generation = 0;
 	for (Entity *e : map->entities()) {
+		if (e->generation() > generation) generation = e->generation();
 		taskData.append(e);
 		if (taskData.size() == entitiesPerTask) {
 			EntityUpdateTask *task = new EntityUpdateTask(map, taskData);
@@ -99,22 +116,35 @@ void MainWindow::updateSimulation() {
 		tasks.append(task);
 		QThreadPool::globalInstance()->start(task);
 	}
-
 	QThreadPool::globalInstance()->waitForDone();
+
+	std::multimap<EntityProperty::ValueType, Action*> speedSortedActions;
 	for (EntityUpdateTask *task : tasks) {
 		for (Action *action : task->actions()) {
-			EntityProperty result = action->exec(map);
-			action->entity()->reportActionResult(result);
-			delete action;
+			speedSortedActions.insert(std::pair<EntityProperty::ValueType, Action*>(action->speed().value(), action));
 		}
 		delete task;
 	}
-	map->deletePass();
-	for (int i = 0; i < 50; i++) {
-		map->createNewEntity();
+
+	for (auto it = speedSortedActions.begin(); it != speedSortedActions.end(); ++it) {
+		EntityProperty result = it->second->exec(map);
+		it->second->entity()->reportActionResult(result);
+		delete it->second;
 	}
-	mTicks++;
-	ui->statusBar->showMessage(tr("%1  : Entities: %2   Tasks: %3").arg(mTicks).arg(map->entities().size()).arg(tasks.size()));
+
+	map->deletePass();
+	if (map->entities().size() < 5000) {
+		for (int i = 0; i < 30; i++) {
+			map->createNewEntity();
+		}
+	}
+
+	if (map->tick() % 5000 == 0) {
+		map->save("autosave_" + QString::number(mSaveNum));
+		mSaveNum++;
+	}
+
+	ui->statusBar->showMessage(tr("%1  : Entities: %2   Tasks: %3   Generation %4").arg(map->tick()).arg(map->entities().size()).arg(tasks.size()).arg(generation));
 }
 
 void MainWindow::showLongestByteCode() {
@@ -146,4 +176,17 @@ void MainWindow::showOldestByteCode() {
 		dialog.setWindowTitle(QString::number(oldest));
 		dialog.exec();
 	}
+}
+
+void MainWindow::save() {
+	Map *map = ui->mapViewWidget->map();
+	map->save("save.sav");
+}
+
+void MainWindow::load() {
+	Map *oldMap = ui->mapViewWidget->map();
+	delete oldMap;
+	Map *newMap = new Map();
+	newMap->load("save.sav");
+	ui->mapViewWidget->setMap(newMap);
 }

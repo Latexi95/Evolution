@@ -20,16 +20,22 @@ class MainWindow : public QMainWindow {
 		void updateSimulation();
 		void showLongestByteCode();
 		void showOldestByteCode();
+		void save();
+		void load();
 	private:
 		Ui::MainWindow *ui;
-		quint64 mTicks;
 		QTimer *mUpdateTimer;
+		QTimer *mAutoSave;
 		QAction *mRunningAction;
 		QAction *mShowLongestByteCode;
 		QAction *mShowOldestByteCode;
 
 		QAction *mShowFoodLevels;
 		QAction *mShowEntities;
+		QAction *mSave;
+		QAction *mLoad;
+
+		int mSaveNum;
 };
 
 #endif // MAINWINDOW_H

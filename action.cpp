@@ -26,8 +26,8 @@ MoveAction::~MoveAction() {
 }
 
 EntityProperty MoveAction::exec(Map *map) const {
+	mEntity->energy() -= mSpeed / 5 + 7;
 	if (map->move(mEntity, mEntity->position().targetLocation(mDirection, 1))) {
-		mEntity->energy() -= mSpeed;
 		return EntityProperty::max();
 	}
 	return EntityProperty::min();
@@ -53,16 +53,16 @@ EntityProperty AttackAction::exec(Map *map) const {
 	if (map->isPositionOnMap(targetPos)) {
 		Tile &tile = map->tile(targetPos);
 
-
+		mEntity->energy() -= mSpeed / 2 + 2;
 		if (!tile.mEntity) {//Nothing in target tile
 			return EntityProperty::min();
 		}
 
-		mEntity->energy() -= mSpeed;
+
 		EntityProperty usedPower = mEntity->energy().take(mPower);
 
-		EntityProperty damageDealt = tile.mEntity->health().take((usedPower / 10).greater(1));
-		return damageDealt + 1;
+		EntityProperty damageDealt = tile.mEntity->health().take((usedPower).greater(1));
+		return damageDealt;
 	}
 	else {
 		return EntityProperty::min();
@@ -89,9 +89,9 @@ EatAction::~EatAction() {
 
 EntityProperty EatAction::exec(Map *map) const {
 	Tile &tile = map->tile(mEntity->position());
-	EntityProperty usedSpeed = mEntity->energy().take(mSpeed) + 1;
-	EntityProperty eaten = tile.mFoodLevels[(int)mFoodType].take((usedSpeed + usedSpeed / 2).sqrt()) * 2;
-	mEntity->energy() += eaten;
+	EntityProperty usedEnergy = mEntity->energy().take(mSpeed / 2 + 5) + 1;
+	EntityProperty eaten = tile.mFoodLevels[(int)mFoodType].take(usedEnergy * 50);
+	mEntity->energy() += eaten * 2 / 30;
 	return eaten;
 }
 
@@ -108,8 +108,31 @@ HealAction::HealAction(Entity *entity, EntityProperty speed) :
 HealAction::~HealAction() {
 }
 
-EntityProperty HealAction::exec(Map *map) const {
-	EntityProperty used = mEntity->energy().take(mSpeed);
-	mEntity->health() += used;
+EntityProperty HealAction::exec(Map *) const {
+	EntityProperty used = mEntity->energy().take(mSpeed / 2 + 5);
+	mEntity->health() += used / 2;
 	return used;
+}
+
+
+ReproduceAction::ReproduceAction(Entity *entity, EntityProperty speed) :
+	Action(entity, speed) {
+}
+
+ReproduceAction::~ReproduceAction() {
+}
+
+EntityProperty ReproduceAction::exec(Map *map) const {
+	mEntity->energy() -= 20;
+	if (mEntity->energy() > mSpeed * 3) {
+		Entity *child = map->createNewEntity(mEntity);
+		if (!child) {
+			return EntityProperty::min();
+		}
+
+		child->energy() = mEntity->energy().take(mSpeed * 3) / 2;
+
+		return child->energy();
+	}
+	return EntityProperty::min();
 }

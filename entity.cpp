@@ -2,14 +2,16 @@
 #include "map.h"
 #include "action.h"
 #include <cassert>
+#include <QDataStream>
 
 Entity::Entity() :
 	mHealth(100),
 	mMaxHealth(150),
-	mEnergy(1000),
+	mEnergy(20),
 	mSpeed(10),
 	mPower(10),
-	mLifeTime(0) {
+	mLifeTime(0),
+	mGeneration(1) {
 
 }
 
@@ -30,7 +32,7 @@ Action *Entity::update(const Map *map) {
 	int instructionCounter;
 	const int maxInstructions = 1000;
 	Action *action = exec(map, maxInstructions, instructionCounter);
-	mEnergy -= instructionCounter / 100 + 1;
+	mEnergy -= instructionCounter / 50 + 1;
 	return action;
 }
 
@@ -73,17 +75,6 @@ Action *Entity::exec(const Map *map, const int maxInstruction, int &instructionC
 		if (action != nullptr) return action;
 	}
 	return 0;
-}
-
-const Instruction &Entity::instruction() {
-	return *mExectionPoint;
-}
-
-void Entity::nextInstruction() {
-	++mExectionPoint;
-	if (mExectionPoint == mByteCode.end()) {
-		mExectionPoint = mByteCode.begin();
-	}
 }
 
 Action* Entity::execInstruction(const Map *map, const Instruction &ins) {
@@ -158,6 +149,9 @@ Action* Entity::execInstruction(const Map *map, const Instruction &ins) {
 		case OpCode::GetMaxHealt:
 			mResultRegister = mMaxHealth;
 			break;
+		case OpCode::GetEnergy:
+			mResultRegister = mEnergy;
+			break;
 		case OpCode::Eat:
 			return new EatAction(this, mSpeed, foodTypeFromParam(ins.mParam));
 
@@ -189,62 +183,49 @@ Action* Entity::execInstruction(const Map *map, const Instruction &ins) {
 				mResultRegister = EntityProperty::min();
 			}
 			break;
-		case OpCode::ContainsEntity:
-			if (map->isPositionOnMap(targetMarkerPosition())) {
-				if (map->tile(targetMarkerPosition()).mEntity) {
-					mResultRegister = EntityProperty::max();
-				}
-				else {
-					mResultRegister = EntityProperty::min();
-				}
+		case OpCode::ContainsEntity: {
+			Entity *entity = map->entity(targetMarkerPosition());
+			if (entity) {
+				mResultRegister = EntityProperty::max();
 			}
 			else {
 				mResultRegister = EntityProperty::min();
 			}
 			break;
-
-		case OpCode::EntityCheckSum:
-			if (map->isPositionOnMap(targetMarkerPosition())) {
-				if (map->tile(targetMarkerPosition()).mEntity) {
-					mResultRegister = map->tile(targetMarkerPosition()).mEntity->byteCodeCheckSum();
-				}
-				else {
-					mResultRegister = EntityProperty::min();
-				}
+		}
+		case OpCode::EntityCheckSum: {
+			Entity *entity = map->entity(targetMarkerPosition());
+			if (entity) {
+				mResultRegister = entity->byteCodeCheckSum();
 			}
 			else {
 				mResultRegister = EntityProperty::min();
 			}
 			break;
+		}
 		case OpCode::SelfCheckSum:
 			mResultRegister = byteCodeCheckSum();
 			break;
-		case OpCode::CheckEntityHealth:
-			if (map->isPositionOnMap(targetMarkerPosition())) {
-				if (map->tile(targetMarkerPosition()).mEntity) {
-					mResultRegister = map->tile(targetMarkerPosition()).mEntity->health();
-				}
-				else {
-					mResultRegister = EntityProperty::min();
-				}
+		case OpCode::CheckEntityHealth: {
+			Entity *entity = map->entity(targetMarkerPosition());
+			if (entity) {
+				mResultRegister = entity->health();
 			}
 			else {
 				mResultRegister = EntityProperty::min();
 			}
 			break;
-		case OpCode::CheckEntitySpeed:
-			if (map->isPositionOnMap(targetMarkerPosition())) {
-				if (map->tile(targetMarkerPosition()).mEntity) {
-					mResultRegister = map->tile(targetMarkerPosition()).mEntity->speed();
-				}
-				else {
-					mResultRegister = EntityProperty::min();
-				}
+		}
+		case OpCode::CheckEntitySpeed: {
+			Entity *entity = map->entity(targetMarkerPosition());
+			if (entity) {
+				mResultRegister = entity->speed();
 			}
 			else {
 				mResultRegister = EntityProperty::min();
 			}
 			break;
+		}
 		case OpCode::ConditionalJump:
 			if (!mPrimaryRegister.isMin()) {
 				int jump = ins.mParam % mByteCode.size();
@@ -257,6 +238,30 @@ Action* Entity::execInstruction(const Map *map, const Instruction &ins) {
 			int jump = ins.mParam % mByteCode.size();
 			for (int i = 0; i < jump - 1; i++) {
 				nextInstruction();
+			}
+			break;
+		}
+		case OpCode::Reproduce:
+			return new ReproduceAction(this, mSpeed);
+
+		case OpCode::LoadEntityStore: {
+			Entity *entity = map->entity(targetMarkerPosition());
+			if (entity) {
+				mResultRegister = entity->loadStore(ins.mParam);
+			}
+			else {
+				mResultRegister = EntityProperty::min();
+			}
+			break;
+		}
+		case OpCode::CopyEntityStore: {
+			Entity *entity = map->entity(targetMarkerPosition());
+			if (entity) {
+				entity->saveStore(ins.mParam, mPrimaryRegister);
+				mResultRegister = EntityProperty::max();
+			}
+			else {
+				mResultRegister = EntityProperty::min();
 			}
 			break;
 		}
@@ -286,11 +291,58 @@ FoodType Entity::foodTypeFromParam(EntityProperty::ValueType param) {
 	return FoodType::V;
 }
 
-Position Entity::targetMarkerPosition() const {
-	return mPosition + mTargetMarker;
-}
 quint64 Entity::lifeTime() const {
 	return mLifeTime;
+}
+
+quint64 Entity::generation() const {
+	return mGeneration;
+}
+
+void Entity::setGeneration(quint64 gen) {
+	mGeneration = gen;
+}
+
+void Entity::save(QDataStream &stream, int format) const {
+	stream << mHealth;
+	stream << mMaxHealth;
+	stream << mEnergy;
+	stream << mSpeed;
+	stream << mPosition;
+	stream << mTargetMarker;
+	stream << mResultRegister;
+	stream << mPrimaryRegister;
+	stream << mSecondaryRegister;
+	stream << mLifeTime;
+	stream << mData;
+	stream << mByteCode;
+	stream << mExecutionPoint;
+	stream << mGeneration;
+}
+
+void Entity::load(QDataStream &stream, int format) {
+	stream >> mHealth;
+	stream >> mMaxHealth;
+	stream >> mEnergy;
+	stream >> mSpeed;
+	stream >> mPosition;
+	stream >> mTargetMarker;
+	stream >> mResultRegister;
+	stream >> mPrimaryRegister;
+	stream >> mSecondaryRegister;
+	stream >> mLifeTime;
+	stream >> mData;
+	stream >> mByteCode;
+	stream >> mExecutionPoint;
+	stream >> mGeneration;
+}
+
+EntityProperty Entity::loadStore(EntityProperty::ValueType id) const {
+	return mData.value(id);
+}
+
+void Entity::saveStore(EntityProperty::ValueType id, const EntityProperty &val) {
+	mData[id] = val;
 }
 
 const QVector<Instruction> &Entity::byteCode() const {
@@ -299,7 +351,7 @@ const QVector<Instruction> &Entity::byteCode() const {
 
 void Entity::setByteCode(const QVector<Instruction> &byteCode) {
 	mByteCode = byteCode;
-	mExectionPoint = mByteCode.begin();
+	mExecutionPoint = 0;
 }
 
 
@@ -308,7 +360,7 @@ void Entity::setByteCode(const QVector<Instruction> &byteCode) {
 
 bool Entity::deletePass() {
 	if (mEnergy == EntityProperty::min()) {//No Energy
-		mHealth -= 1;
+		mHealth -= 3;
 	}
 	if (mHealth == EntityProperty::min()) {
 		return true;
@@ -383,6 +435,9 @@ QString Entity::byteCodeAsString() const {
 			case OpCode::GetMaxHealt:
 				text += "GetMaxHealt";
 				break;
+			case OpCode::GetEnergy:
+				text += "GetEnergy";
+				break;
 			case OpCode::Eat: {
 				text += QStringLiteral("Eat: ") + (foodTypeFromParam(ins.mParam) == FoodType::M ? "M" : "V");
 				break;
@@ -434,10 +489,34 @@ QString Entity::byteCodeAsString() const {
 				text += "Jump: " + QString::number(ins.mParam);
 				break;
 			}
+			case OpCode::Reproduce:
+				text += "Reproduce";
+				break;
+			case OpCode::LoadEntityStore:
+				text += "LoadEntityStore";
+				break;
+			case OpCode::CopyEntityStore:
+				text += "CopyEntityStore";
+				break;
 			default:
 				break;
 		}
 		text += '\n';
 	}
 	return text;
+}
+
+
+QDataStream &operator <<(QDataStream &out, const Instruction &ins) {
+	out << (int)ins.mOpCode;
+	out << ins.mParam;
+	return out;
+}
+
+
+QDataStream &operator >>(QDataStream &in, Instruction &ins) {
+	int opCode;
+	in >> opCode >> ins.mParam;
+	ins.mOpCode = (OpCode)opCode;
+	return in;
 }
