@@ -7,6 +7,8 @@
 #include <random>
 #include "entity.h"
 #include <QImage>
+#include <QObject>
+
 
 class QPainter;
 struct Tile {
@@ -23,14 +25,6 @@ struct Tile {
 
 };
 
-enum DrawFlags {
-	None = 0,
-	NoEntities = 1,
-	NoVFoodLevels = 2,
-	NoMFoodLevels = 4,
-	NoDraw = NoEntities | NoVFoodLevels | NoMFoodLevels
-};
-
 class Map {
 	public:
 		Map();
@@ -45,7 +39,7 @@ class Map {
 
 		bool addEntity(Entity *entity, Position pos);
 
-		void draw(QPainter *p, int px, int py, int w, int h, int flags);
+		QImage draw();
 
 		void updateFoodLevels();
 		const QList<Entity *> &entities() const;
@@ -63,6 +57,10 @@ class Map {
 		void load(const QString &path);
 		quint64 tick() const;
 
+		void setDrawModeR(int mode);
+		void setDrawModeG(int mode);
+		void setDrawModeB(int mode);
+		bool noDraw() const;
 	private:
 		quint64 mTick;
 		int mWidth;
@@ -70,6 +68,10 @@ class Map {
 		QVector<Tile> mTiles;
 		QList<Entity*> mEntities;
 		std::mt19937 mRandomGenerator;
+
+		int mDrawModes[3];
+		QImage mDrawBuffers[2];
+		int mCurrentBuffer;
 
 
 		QVector<Instruction> mDefaultByteCode;

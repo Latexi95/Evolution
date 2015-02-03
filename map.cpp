@@ -11,6 +11,11 @@ Map::Map() :
 	mHeight(0),
 	mRandomGenerator(std::random_device()()) {
 
+	mCurrentBuffer = 0;
+	mDrawModes[0] = 1;
+	mDrawModes[1] = 2;
+	mDrawModes[2] = 3;
+
 	QVector<Instruction> byteCode;
 	byteCode.append(Instruction(OpCode::Drink, 0));
 	byteCode.append(Instruction(OpCode::Eat, 0));
@@ -47,6 +52,10 @@ Map::Map(const QImage &img) :
 	mRandomGenerator(std::random_device()()) {
 	assert(mWidth > 0);
 
+	mCurrentBuffer = 0;
+	mDrawModes[0] = 1;
+	mDrawModes[1] = 2;
+	mDrawModes[2] = 3;
 
 	for (int y = 0; y < mHeight; y++) {
 		for (int x = 0; x < mWidth; x++) {
@@ -88,6 +97,9 @@ Map::Map(const QImage &img) :
 	byteCode.append(Instruction(OpCode::Reproduce, 0));
 
 	mDefaultByteCode = byteCode;
+
+	mDrawBuffers[0] = QImage(mWidth, mHeight, QImage::Format_RGB32);
+	mDrawBuffers[1] = QImage(mWidth, mHeight, QImage::Format_RGB32);
 }
 
 Map::~Map() {
@@ -152,35 +164,45 @@ int normalizeValue(EntityProperty property) {
 	return property.sqrt().value();
 }
 
-void Map::draw(QPainter *p, int px, int py, int w, int h, int flags) {
-	if (py < 0) py = 0;
-	if (px < 0) px = 0;
-	if (w > mWidth) w = mWidth;
-	if (h > mHeight) h = mHeight;
-	for (int y = py; y < h; y++) {
-		for (int x = px; x < w; x++) {
+QImage Map::draw() {
+	QImage &curImage = mDrawBuffers[mCurrentBuffer];
+	for (int y = 0; y < mHeight; y++) {
+		QRgb *line = (QRgb*)curImage.scanLine(y);
+		for (int x = 0; x < mWidth; x++) {
 
 			const Tile &t = tile(Position(x, y));
-			int entityColor = 0;
-			if (t.mEntity && (flags & NoEntities) != NoEntities) {
-				entityColor = std::min(127 + normalizeValue(t.mEntity->energy()), 255);
+			quint8 colors[3] = {0, 0, 0};
+			for (int i = 0; i < 3; i++) {
+				switch (mDrawModes[i]) {
+					case 0:
+						break;
+					case 1:
+						if (t.mEntity)
+							colors[i] = std::min(70 + normalizeValue(t.mEntity->energy()), 255);
+						break;
+					case 2:
+						colors[i] = normalizeValue(t.mFoodLevels[(int)FoodType::V]);
+						break;
+					case 3:
+						colors[i] = normalizeValue(t.mFoodLevels[(int)FoodType::M]);
+						break;
+					case 4:
+						colors[i] = normalizeValue(t.mWaterLevel);
+						break;
+					case 5:
+						colors[i] = t.mFoodGenLevel;
+						break;
+					case 6:
+						colors[i] = t.mWaterGenLevel;
+					default:
+						break;
+				}
 			}
-			int foodLevelVColor = 0;
-			int foodLevelMColor = 0;
-			if ((flags & NoMFoodLevels) != NoMFoodLevels) {
-				foodLevelMColor = normalizeValue(t.foodLevel(FoodType::M));
-			}
-			if ((flags & NoVFoodLevels) != NoVFoodLevels) {
-				foodLevelVColor = normalizeValue(t.foodLevel(FoodType::V));
-			}
-			p->setPen(QColor(
-						  entityColor,
-						  foodLevelVColor,
-						  foodLevelMColor));
-			p->drawPoint(px + x, py + y);
+			line[x] = qRgb(colors[0],colors[1], colors[2]);
 		}
 	}
-
+	mCurrentBuffer = 1 - mCurrentBuffer;
+	return curImage;
 }
 
 void Map::updateFoodLevels() {
@@ -329,12 +351,34 @@ void Map::load(const QString &path) {
 		mEntities.append(newEntity);
 		tile(newEntity->position()).mEntity = newEntity;
 	}
+
+	mDrawBuffers[0] = QImage(mWidth, mHeight, QImage::Format_RGB32);
+	mDrawBuffers[1] = QImage(mWidth, mHeight, QImage::Format_RGB32);
 }
 
 
 quint64 Map::tick() const {
 	return mTick;
 }
+
+void Map::setDrawModeR(int mode) {
+	mDrawModes[0] = mode;
+}
+
+void Map::setDrawModeG(int mode) {
+	mDrawModes[1] = mode;
+}
+
+void Map::setDrawModeB(int mode) {
+	mDrawModes[2] = mode;
+}
+
+bool Map::noDraw() const {
+	return mDrawModes[0] == 0 && mDrawModes[1] == 0 && mDrawModes[2] == 0;
+}
+
+
+
 
 
 

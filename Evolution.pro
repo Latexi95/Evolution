@@ -33,7 +33,8 @@ SOURCES += main.cpp\
     map.cpp \
     action.cpp \
     entityupdatetask.cpp \
-    bytecodedialog.cpp
+    bytecodedialog.cpp \
+    worker.cpp
 
 HEADERS  += mainwindow.h \
     mapviewwidget.h \
@@ -44,7 +45,8 @@ HEADERS  += mainwindow.h \
     enums.h \
     action.h \
     entityupdatetask.h \
-    bytecodedialog.h
+    bytecodedialog.h \
+    worker.h
 
 FORMS    += mainwindow.ui \
     bytecodedialog.ui

@@ -2,11 +2,12 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
+#include "worker.h"
 
 namespace Ui {
 class MainWindow;
 }
-
+class QComboBox;
 class MainWindow : public QMainWindow {
 		Q_OBJECT
 	public:
@@ -17,23 +18,32 @@ class MainWindow : public QMainWindow {
 		void changeEvent(QEvent *e);
 
 	private slots:
-		void updateSimulation();
 		void showLongestByteCode();
 		void showOldestByteCode();
 		void save();
 		void load();
+
+		void updateStopped();
+		void showResults(const WorkResults &results);
 	private:
+		void addDrawModeItems(QComboBox *comboBox);
+		void closeEvent(QCloseEvent *e);
+
+		void drawIfNotRunning();
+
 		Ui::MainWindow *ui;
-		QTimer *mUpdateTimer;
 		QTimer *mAutoSave;
 		QAction *mRunningAction;
 		QAction *mShowLongestByteCode;
 		QAction *mShowOldestByteCode;
 
-		QAction *mShowFoodLevels;
-		QAction *mShowEntities;
+		QComboBox *mDrawModeR;
+		QComboBox *mDrawModeG;
+		QComboBox *mDrawModeB;
 		QAction *mSave;
 		QAction *mLoad;
+		QAction *mDrawing;
+		Worker *mWorker;
 };
 
 #endif // MAINWINDOW_H

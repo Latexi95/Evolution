@@ -13,19 +13,21 @@ class MapViewWidget : public QWidget {
 
 		Map *map() const;
 		void setMap(Map *map);
-		int drawFlags() const;
-		void setDrawFlags(int drawFlags);
+
+		bool drawing() const;
+		void setDrawing(bool value);
 
 	signals:
 
 	public slots:
-
+		void setCurrentImage(QImage img);
 	private:
 		void paintEvent(QPaintEvent *);
 
 
 		Map *mMap;
-		int mDrawFlags;
+		bool mDrawing;
+		QImage mCurrentImage;
 };
 
 #endif // MAPVIEWWIDGET_H

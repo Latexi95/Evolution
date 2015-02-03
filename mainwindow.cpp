@@ -6,18 +6,18 @@
 #include "action.h"
 #include <QThreadPool>
 #include <QTimer>
+#include <QComboBox>
 #include <map>
 #include "bytecodedialog.h"
+#include "worker.h"
 
-const int entitiesPerTask = 1500;
+
 
 MainWindow::MainWindow(QWidget *parent) :
 	QMainWindow(parent),
-	ui(new Ui::MainWindow) {
+	ui(new Ui::MainWindow),
+	mWorker(0) {
 	ui->setupUi(this);
-	mUpdateTimer = new QTimer(this);
-	connect(mUpdateTimer, &QTimer::timeout, this, &MainWindow::updateSimulation);
-	mUpdateTimer->start(0);
 
 	QThreadPool::globalInstance()->setExpiryTimeout(-1);
 
@@ -26,53 +26,78 @@ MainWindow::MainWindow(QWidget *parent) :
 	ui->mapViewWidget->setMap(map);
 	mRunningAction = ui->mainToolBar->addAction(tr("Running"));
 	mRunningAction->setCheckable(true);
-	mRunningAction->setChecked(true);
+	mRunningAction->setChecked(false);
+	ui->mapViewWidget->setCurrentImage(map->draw());
 	connect(mRunningAction, &QAction::toggled, [this](bool toggled) {
-		if (toggled) {
-			mUpdateTimer->start(0);
+		if (toggled && !mWorker) {
 			mShowLongestByteCode->setEnabled(false);
 			mShowOldestByteCode->setEnabled(false);
 			mSave->setEnabled(false);
 			mLoad->setEnabled(false);
+			mWorker = new Worker(ui->mapViewWidget->map());
+			connect(mWorker, &Worker::finished, this, &MainWindow::updateStopped, Qt::QueuedConnection);
+			connect(mWorker, &Worker::drawFinished, ui->mapViewWidget, &MapViewWidget::setCurrentImage, Qt::QueuedConnection);
+			connect(mWorker, &Worker::workResults, this, &MainWindow::showResults, Qt::QueuedConnection);
+			QThreadPool::globalInstance()->start(mWorker);
 		}
-		else {
-			mUpdateTimer->stop();
-			mShowLongestByteCode->setEnabled(true);
-			mShowOldestByteCode->setEnabled(true);
-			mSave->setEnabled(true);
-			mLoad->setEnabled(true);
+		else if (!toggled && mWorker){
+			mWorker->stop();
 		}
 	});
 
 	mShowLongestByteCode = ui->mainToolBar->addAction(tr("Show longest bytecode"));
 	connect(mShowLongestByteCode, &QAction::triggered, this, &MainWindow::showLongestByteCode);
-	mShowLongestByteCode->setEnabled(false);
+	mShowLongestByteCode->setEnabled(true);
 
 	mShowOldestByteCode = ui->mainToolBar->addAction(tr("Show oldest bytecode"));
 	connect(mShowOldestByteCode, &QAction::triggered, this, &MainWindow::showOldestByteCode);
-	mShowOldestByteCode->setEnabled(false);
+	mShowOldestByteCode->setEnabled(true);
 
+	mDrawing = ui->mainToolBar->addAction(tr("Drawing"));
+	mDrawing->setCheckable(true);
+	mDrawing->setChecked(true);
 
-	mShowFoodLevels = ui->mainToolBar->addAction(tr("Show food levels"));
-	mShowFoodLevels->setCheckable(true);
-	mShowFoodLevels->setChecked(true);
-	connect(mShowFoodLevels, &QAction::toggled, [this](bool toggled) {
-		ui->mapViewWidget->setDrawFlags(ui->mapViewWidget->drawFlags() ^ (NoMFoodLevels | NoVFoodLevels));
+	connect(mDrawing, &QAction::toggled, [this](bool drawing) {
+		ui->mapViewWidget->setDrawing(drawing);
+		drawIfNotRunning();
 	});
 
-	mShowEntities = ui->mainToolBar->addAction(tr("Show entities"));
-	mShowEntities->setCheckable(true);
-	mShowEntities->setChecked(true);
-	connect(mShowEntities, &QAction::toggled, [this](bool toggled) {
-		ui->mapViewWidget->setDrawFlags(ui->mapViewWidget->drawFlags() ^ NoEntities);
+	mDrawModeR = new QComboBox();
+	mDrawModeG = new QComboBox();
+	mDrawModeB = new QComboBox();
+	addDrawModeItems(mDrawModeR);
+	addDrawModeItems(mDrawModeG);
+	addDrawModeItems(mDrawModeB);
+
+	ui->mainToolBar->addWidget(mDrawModeR);
+	ui->mainToolBar->addWidget(mDrawModeG);
+	ui->mainToolBar->addWidget(mDrawModeB);
+
+	mDrawModeR->setCurrentIndex(1);
+	mDrawModeG->setCurrentIndex(2);
+	mDrawModeB->setCurrentIndex(3);
+	connect(mDrawModeR, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged),
+			[this](int index) {
+		ui->mapViewWidget->map()->setDrawModeR(index);
+		drawIfNotRunning();
+	});
+	connect(mDrawModeG, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged),
+			[this](int index) {
+		ui->mapViewWidget->map()->setDrawModeG(index);
+		drawIfNotRunning();
+	});
+	connect(mDrawModeB, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged),
+			[this](int index) {
+		ui->mapViewWidget->map()->setDrawModeB(index);
+		drawIfNotRunning();
 	});
 
 	mSave = ui->mainToolBar->addAction(tr("Save"));
-	mSave->setEnabled(false);
+	mSave->setEnabled(true);
 	connect(mSave, &QAction::triggered, this, &MainWindow::save);
 
 	mLoad = ui->mainToolBar->addAction(tr("Load"));
-	mLoad->setEnabled(false);
+	mLoad->setEnabled(true);
 	connect(mLoad, &QAction::triggered, this, &MainWindow::load);
 
 
@@ -93,70 +118,6 @@ void MainWindow::changeEvent(QEvent *e) {
 	}
 }
 
-void MainWindow::updateSimulation() {
-	Map *map = ui->mapViewWidget->map();
-	if (!map || !mRunningAction->isChecked()) return;
-	map->updateFoodLevels();
-	QVector<Entity*> taskData;
-	QVector<EntityUpdateTask*> tasks;
-	quint64 generation = 0;
-	for (Entity *e : map->entities()) {
-		if (e->generation() > generation) generation = e->generation();
-		taskData.append(e);
-		if (taskData.size() == entitiesPerTask) {
-			EntityUpdateTask *task = new EntityUpdateTask(map, taskData);
-			tasks.append(task);
-#ifndef DEBUG
-			QThreadPool::globalInstance()->start(task);
-#endif
-			taskData.clear();
-		}
-	}
-
-
-	if (!taskData.isEmpty()) {
-		EntityUpdateTask *task = new EntityUpdateTask(map, taskData);
-		tasks.append(task);
-#ifndef DEBUG
-		QThreadPool::globalInstance()->start(task);
-#endif
-	}
-
-#ifdef DEBUG
-	for (EntityUpdateTask *task : tasks) task->run();
-#else
-	QThreadPool::globalInstance()->waitForDone();
-#endif
-
-
-
-	std::multimap<EntityProperty::ValueType, Action*> speedSortedActions;
-	for (EntityUpdateTask *task : tasks) {
-		for (Action *action : task->actions()) {
-			speedSortedActions.insert(std::pair<EntityProperty::ValueType, Action*>(action->speed().value(), action));
-		}
-		delete task;
-	}
-
-	for (auto it = speedSortedActions.begin(); it != speedSortedActions.end(); ++it) {
-		EntityProperty result = it->second->exec(map);
-		it->second->entity()->reportActionResult(result);
-		delete it->second;
-	}
-
-	map->deletePass();
-	if (map->entities().size() < 5000) {
-		for (int i = 0; i < 30; i++) {
-			map->createNewEntity();
-		}
-	}
-
-	if (map->tick() % 5000 == 0) {
-		map->save("autosave_" + QString::number(map->tick() / 5000));
-	}
-
-	ui->statusBar->showMessage(tr("%1  : Entities: %2   Tasks: %3   Generation %4").arg(map->tick()).arg(map->entities().size()).arg(tasks.size()).arg(generation));
-}
 
 void MainWindow::showLongestByteCode() {
 	Entity *longestByteCodeEntity = 0;
@@ -201,4 +162,47 @@ void MainWindow::load() {
 	Map *newMap = new Map();
 	newMap->load("save.sav");
 	ui->mapViewWidget->setMap(newMap);
+	drawIfNotRunning();
+}
+
+void MainWindow::updateStopped() {
+	delete mWorker;
+	mWorker = 0;
+	mShowLongestByteCode->setEnabled(true);
+	mShowOldestByteCode->setEnabled(true);
+	mSave->setEnabled(true);
+	mLoad->setEnabled(true);
+}
+
+void MainWindow::showResults(const WorkResults &results) {
+	ui->statusBar->showMessage(tr("%1  : Entities: %2   Tasks: %3   Generation %4    Timings: %5, %6  (%7%)")
+							   .arg(results.mTicks)
+							   .arg(results.mEntities)
+							   .arg(results.mTaskSize)
+							   .arg(results.mGeneration)
+							   .arg(results.mExecutionTime)
+							   .arg(results.mTotalTime)
+							   .arg(results.mTotalTime ? (results.mExecutionTime * 100 / results.mTotalTime) : 0));
+}
+
+void MainWindow::addDrawModeItems(QComboBox *comboBox) {
+	comboBox->addItem(tr("None"));
+	comboBox->addItem(tr("Entity [Energy]"));
+	comboBox->addItem(tr("Food [V]"));
+	comboBox->addItem(tr("Food [M]"));
+	comboBox->addItem(tr("Water level"));
+	comboBox->addItem(tr("Food [V] generation"));
+	comboBox->addItem(tr("Water generation"));
+}
+
+void MainWindow::closeEvent(QCloseEvent *e) {
+	if (mWorker) {
+		mWorker->stop();
+	}
+}
+
+void MainWindow::drawIfNotRunning() {
+	if (!mWorker) {
+		ui->mapViewWidget->setCurrentImage(ui->mapViewWidget->map()->draw());
+	}
 }

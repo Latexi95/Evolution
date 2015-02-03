@@ -6,11 +6,8 @@
 MapViewWidget::MapViewWidget(QWidget *parent) :
 	QWidget(parent),
 	mMap(0),
-	mDrawFlags(0) {
+	mDrawing(true) {
 
-	QTimer *timer = new QTimer(this);
-	connect(timer, &QTimer::timeout, this, static_cast<void (MapViewWidget::*)()>(&MapViewWidget::update));
-	timer->start(100);
 }
 
 MapViewWidget::~MapViewWidget() {
@@ -26,17 +23,24 @@ void MapViewWidget::setMap(Map *map) {
 
 void MapViewWidget::paintEvent(QPaintEvent *e) {
 	if (!mMap) return;
+	if (!mDrawing || mMap->noDraw()) return;
 	QPainter painter(this);
-	if (mDrawFlags == NoDraw) return;
-	mMap->draw(&painter, e->rect().x(), e->rect().y(), e->rect().width(), e->rect().height(), mDrawFlags);
+	painter.drawImage(0,0, mCurrentImage);
 }
-int MapViewWidget::drawFlags() const {
-	return mDrawFlags;
+bool MapViewWidget::drawing() const {
+	return mDrawing;
 }
 
-void MapViewWidget::setDrawFlags(int drawFlags) {
-	mDrawFlags = drawFlags;
+void MapViewWidget::setDrawing(bool value) {
+	mDrawing = value;
 }
+
+void MapViewWidget::setCurrentImage(QImage img) {
+	mCurrentImage = img;
+	repaint();
+}
+
+
 
 
 
