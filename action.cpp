@@ -26,7 +26,9 @@ MoveAction::~MoveAction() {
 }
 
 EntityProperty MoveAction::exec(Map *map) const {
-	mEntity->energy() -= mSpeed / 5 + 7;
+	int waterGenLevel = map->tile(mEntity->position()).mWaterGenLevel;
+	waterGenLevel *= waterGenLevel;
+	mEntity->energy() -= mSpeed / 5 + 6 + waterGenLevel / 2048;
 	if (map->move(mEntity, mEntity->position().targetLocation(mDirection, 1))) {
 		return EntityProperty::max();
 	}
@@ -52,8 +54,8 @@ EntityProperty AttackAction::exec(Map *map) const {
 	Position targetPos = mEntity->position().targetLocation(mDirection, 1);
 	if (map->isPositionOnMap(targetPos)) {
 		Tile &tile = map->tile(targetPos);
-
-		mEntity->energy() -= mSpeed / 2 + 2;
+		int waterGenLevel = map->tile(mEntity->position()).mWaterGenLevel;
+		mEntity->energy() -= mSpeed / 2 + 2 + waterGenLevel / 2048;
 		if (!tile.mEntity) {//Nothing in target tile
 			return EntityProperty::min();
 		}
@@ -61,7 +63,7 @@ EntityProperty AttackAction::exec(Map *map) const {
 
 		EntityProperty usedPower = mEntity->energy().take(mPower);
 
-		EntityProperty damageDealt = tile.mEntity->health().take((usedPower).greater(1));
+		EntityProperty damageDealt = tile.mEntity->health().take((usedPower * 4).greater(1));
 		return damageDealt;
 	}
 	else {
@@ -91,7 +93,7 @@ EntityProperty EatAction::exec(Map *map) const {
 	Tile &tile = map->tile(mEntity->position());
 	EntityProperty usedEnergy = mEntity->energy().take(mSpeed / 2 + 5) + 1;
 	EntityProperty eaten = tile.mFoodLevels[(int)mFoodType].take(usedEnergy * 50);
-	mEntity->energy() += eaten * 2 / 30;
+	mEntity->energy() += eaten / 15;
 	return eaten;
 }
 
@@ -131,8 +133,45 @@ EntityProperty ReproduceAction::exec(Map *map) const {
 		}
 
 		child->energy() = mEntity->energy().take(mSpeed * 3) / 2;
+		child->hydration() = mEntity->hydration().take(mSpeed * 10);
 
 		return child->energy();
 	}
 	return EntityProperty::min();
+}
+
+
+CommunicateAction::CommunicateAction(Entity *entity, EntityProperty speed, Entity *target, EntityProperty::ValueType id, EntityProperty value) :
+	Action(entity, speed),
+	mTarget(target),
+	mId(id),
+	mValue(value) {
+}
+
+CommunicateAction::~CommunicateAction() {
+}
+
+EntityProperty CommunicateAction::exec(Map *) const {
+	mEntity->energy() -= mSpeed / 3;
+	EntityProperty oldValue = mTarget->loadStore(mId);
+	mTarget->saveStore(mId, mValue);
+	return oldValue;
+}
+
+
+DrinkAction::DrinkAction(Entity *entity, EntityProperty speed) :
+	Action(entity, speed) {
+
+}
+
+DrinkAction::~DrinkAction() {
+
+}
+
+EntityProperty DrinkAction::exec(Map *map) const {
+	Tile &t = map->tile(entity()->position());
+	EntityProperty energyUsed = entity()->energy().take(mSpeed / 2 + 4);
+	EntityProperty water = t.mWaterLevel.take((energyUsed + 10) * 5);
+	entity()->hydration() += water;
+	return water;
 }

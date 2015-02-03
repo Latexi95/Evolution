@@ -34,8 +34,6 @@ class MainWindow : public QMainWindow {
 		QAction *mShowEntities;
 		QAction *mSave;
 		QAction *mLoad;
-
-		int mSaveNum;
 };
 
 #endif // MAINWINDOW_H

@@ -10,8 +10,10 @@ Entity::Entity() :
 	mEnergy(20),
 	mSpeed(10),
 	mPower(10),
+	mHydration(100),
 	mLifeTime(0),
-	mGeneration(1) {
+	mGeneration(1),
+	mExecutionEnergyUsageCounter(0) {
 
 }
 
@@ -29,10 +31,25 @@ void Entity::setPosition(const Position &position) {
 
 Action *Entity::update(const Map *map) {
 	mLifeTime++;
+
+	mHydration -= 32 + map->tile(position()).mHeat / 8;
+	if (mHydration == 0) {
+		mEnergy -= 20;
+		mHealth -= 1;
+	}
+	else if (mHydration < 50) {
+		mEnergy -= 5;
+	}
+
 	int instructionCounter;
 	const int maxInstructions = 1000;
 	Action *action = exec(map, maxInstructions, instructionCounter);
-	mEnergy -= instructionCounter / 50 + 1;
+	mExecutionEnergyUsageCounter += mByteCode.size() + instructionCounter;
+	while (mExecutionEnergyUsageCounter > 500) {
+		mEnergy -= 1;
+		mExecutionEnergyUsageCounter -= 500;
+	}
+	mEnergy -= 1;
 	return action;
 }
 
@@ -46,6 +63,10 @@ EntityProperty &Entity::energy() {
 
 EntityProperty &Entity::speed() {
 	return mSpeed;
+}
+
+EntityProperty &Entity::hydration() {
+	return mHydration;
 }
 
 void Entity::reportActionResult(EntityProperty success) {
@@ -257,14 +278,36 @@ Action* Entity::execInstruction(const Map *map, const Instruction &ins) {
 		case OpCode::CopyEntityStore: {
 			Entity *entity = map->entity(targetMarkerPosition());
 			if (entity) {
-				entity->saveStore(ins.mParam, mPrimaryRegister);
-				mResultRegister = EntityProperty::max();
+				return new CommunicateAction(this, mSpeed, entity, ins.mParam, mPrimaryRegister);
 			}
 			else {
 				mResultRegister = EntityProperty::min();
 			}
 			break;
 		}
+		case OpCode::Drink: {
+			return new DrinkAction(this, mSpeed);
+		}
+		case OpCode::CheckHydrationLevel: {
+			mResultRegister = mHydration;
+			break;
+		}
+		case OpCode::CheckWaterLevel:
+			if (map->isPositionOnMap(targetMarkerPosition())) {
+				mResultRegister = map->tile(targetMarkerPosition()).mWaterLevel;
+			}
+			else {
+				mResultRegister = EntityProperty::min();
+			}
+			break;
+		case OpCode::CheckHeatLevel:
+			if (map->isPositionOnMap(targetMarkerPosition())) {
+				mResultRegister = map->tile(targetMarkerPosition()).mHeat;
+			}
+			else {
+				mResultRegister = EntityProperty::min();
+			}
+			break;
 		case OpCode::MaxOpCode:
 			assert("Max op code" && 0);
 	}
@@ -359,6 +402,7 @@ void Entity::setByteCode(const QVector<Instruction> &byteCode) {
 
 
 bool Entity::deletePass() {
+
 	if (mEnergy == EntityProperty::min()) {//No Energy
 		mHealth -= 3;
 	}
@@ -493,10 +537,24 @@ QString Entity::byteCodeAsString() const {
 				text += "Reproduce";
 				break;
 			case OpCode::LoadEntityStore:
-				text += "LoadEntityStore";
+				text += "LoadEntityStore: " + QString::number(ins.mParam);;
 				break;
 			case OpCode::CopyEntityStore:
-				text += "CopyEntityStore";
+				text += "CopyEntityStore: " + QString::number(ins.mParam);;
+				break;
+			case OpCode::Drink: {
+				text += "Drink";
+				break;
+			}
+			case OpCode::CheckHydrationLevel: {
+				text += "CheckHydrationLevel";
+				break;
+			}
+			case OpCode::CheckWaterLevel:
+				text += "CheckWaterLevel";
+				break;
+			case OpCode::CheckHeatLevel:
+				text += "CheckHeatLevel";
 				break;
 			default:
 				break;

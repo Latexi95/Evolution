@@ -58,6 +58,12 @@ enum class OpCode : quint8 {
 	LoadEntityStore,
 	CopyEntityStore,
 
+	Drink,
+
+	CheckHydrationLevel,
+	CheckWaterLevel,
+	CheckHeatLevel,
+
 
 	MaxOpCode
 };
@@ -83,6 +89,7 @@ class Entity {
 		EntityProperty &health();
 		EntityProperty &energy();
 		EntityProperty &speed();
+		EntityProperty &hydration();
 
 		void reportActionResult(EntityProperty success);
 
@@ -127,6 +134,7 @@ class Entity {
 		EntityProperty mResultRegister;
 		EntityProperty mPrimaryRegister;
 		EntityProperty mSecondaryRegister;
+		EntityProperty mHydration;
 		quint64 mLifeTime;
 
 		QMap<EntityProperty::ValueType, EntityProperty> mData;
@@ -135,6 +143,7 @@ class Entity {
 		int mExecutionPoint;
 
 		quint64 mGeneration;
+		int mExecutionEnergyUsageCounter;
 };
 
 inline const Instruction &Entity::instruction() const {

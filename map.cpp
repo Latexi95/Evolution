@@ -3,6 +3,7 @@
 #include <QPainter>
 #include <QFile>
 #include <QDataStream>
+#include <cassert>
 
 Map::Map() :
 	mTick (0),
@@ -11,6 +12,7 @@ Map::Map() :
 	mRandomGenerator(std::random_device()()) {
 
 	QVector<Instruction> byteCode;
+	byteCode.append(Instruction(OpCode::Drink, 0));
 	byteCode.append(Instruction(OpCode::Eat, 0));
 	byteCode.append(Instruction(OpCode::ResetTargetMarker, 0));
 	byteCode.append(Instruction(OpCode::MoveTargetMarker, 0));
@@ -37,22 +39,32 @@ Map::Map() :
 
 }
 
-Map::Map(int width, int height) :
+Map::Map(const QImage &img) :
 	mTick(0),
-	mWidth(width),
-	mHeight(height),
-	mTiles(width * height),
-	mRandomGenerator(std::random_device()()){
+	mWidth(img.width()),
+	mHeight(img.height()),
+	mTiles(img.height() * img.width()),
+	mRandomGenerator(std::random_device()()) {
+	assert(mWidth > 0);
+
 
 	for (int y = 0; y < mHeight; y++) {
 		for (int x = 0; x < mWidth; x++) {
 			Tile &t = tile(Position(x, y));
-			t.mWaterLevel = 1000;
+			t.mWaterLevel = 10;
 			t.mFoodLevels[(int)FoodType::V] = 400;
+			QRgb rgb = img.pixel(x, y);
+			int r = (rgb & 0xFF0000) >> 16;
+			int g = (rgb & 0xFF00) >> 8;
+			int b = rgb & 0xFF;
+			t.mWaterGenLevel = b;
+			t.mFoodGenLevel = g;
+			t.mHeat = r;
 		}
 	}
 
 	QVector<Instruction> byteCode;
+	byteCode.append(Instruction(OpCode::Drink, 0));
 	byteCode.append(Instruction(OpCode::Eat, 0));
 	byteCode.append(Instruction(OpCode::ResetTargetMarker, 0));
 	byteCode.append(Instruction(OpCode::MoveTargetMarker, 0));
@@ -175,7 +187,12 @@ void Map::updateFoodLevels() {
 	for (int y = 0; y < mHeight; y++) {
 		for (int x = 0; x < mWidth; x++) {
 			Tile &t = tile(Position(x, y));
-			if (!t.mEntity) t.mFoodLevels[(int)FoodType::V] += 14;
+			t.mWaterLevel += EntityProperty(t.mWaterGenLevel) - t.mWaterLevel / t.mWaterGenLevel;
+			t.mFoodLevels[(int)FoodType::V] += std::max(t.mFoodGenLevel - (int)t.mStressLevel.value() * t.mStressLevel.value(), 0);
+			if (t.mEntity)
+				t.mStressLevel += 3;
+			else
+				t.mStressLevel -= 1;
 			t.mFoodLevels[(int)FoodType::V] -= (t.mFoodLevels[(int)FoodType::V] / 2 + t.mFoodLevels[(int)FoodType::V]).sqrt() / 60;
 			t.mFoodLevels[(int)FoodType::M] -= 10;
 		}
@@ -190,7 +207,7 @@ const QList<Entity*> &Map::entities() const {
 void Map::deletePass() {
 	for (QList<Entity*>::Iterator i = mEntities.begin(); i != mEntities.end();) {
 		if ((*i)->deletePass()) {
-			tile((*i)->position()).mFoodLevels[(int)FoodType::M] += (*i)->energy() * 30 + 100 * sqrt(sqrt((*i)->lifeTime()));
+			tile((*i)->position()).mFoodLevels[(int)FoodType::M] += (*i)->energy() * 40 + 30 * sqrt((*i)->lifeTime());
 			tile((*i)->position()).mEntity = 0;
 			delete *i;
 			i = mEntities.erase(i);
@@ -231,14 +248,25 @@ Entity *Map::createNewEntity() {
 
 Entity *Map::createNewEntity(Entity *baseEntity) {
 	QVector<Instruction> byteCode = baseEntity->byteCode();
-	if (qrand() % 10 > 4) byteCode.insert(qrand() % (byteCode.size()  + 1), Instruction((OpCode)(qrand() % (int)OpCode::MaxOpCode), qrand()));
+	while (qrand() % 10 < 5) {
+		int mod = qrand() % 10;
+		if (mod < 5) {
+			OpCode opCode = (OpCode)(qrand() % (int)OpCode::MaxOpCode);
+			if (opCode == OpCode::Jump || opCode == OpCode::ConditionalJump) {
+				byteCode.insert(qrand() % (byteCode.size()  + 1), Instruction(opCode, qrand() % 10));
+			}
+			else {
+				byteCode.insert(qrand() % (byteCode.size()  + 1), Instruction(opCode, qrand()));
+			}
 
-	if (qrand() % 10 > 7) byteCode[qrand() % (byteCode.size())].mParam = qrand();
-
-	if (qrand() % 100 > 70) {
-		byteCode.removeAt(qrand() % byteCode.size());
+		}
+		else if (mod < 9) {
+			byteCode.removeAt(qrand() % byteCode.size());
+		}
+		else {
+			byteCode[qrand() % (byteCode.size())].mParam = qrand();
+		}
 	}
-
 	Entity *newEntity = new Entity();
 	newEntity->setGeneration(baseEntity->generation() + 1);
 	newEntity->setByteCode(byteCode);
@@ -302,6 +330,8 @@ void Map::load(const QString &path) {
 		tile(newEntity->position()).mEntity = newEntity;
 	}
 }
+
+
 quint64 Map::tick() const {
 	return mTick;
 }
@@ -320,7 +350,11 @@ QDataStream &operator <<(QDataStream &out, const Tile &tile) {
 	for (int i = 0; i < (int)FoodType::MaxFoodType; i++) {
 		out << tile.mFoodLevels[i];
 	}
+	out << tile.mStressLevel;
 	out << tile.mWaterLevel;
+	out << tile.mFoodGenLevel;
+	out << tile.mWaterGenLevel;
+	out << tile.mHeat;
 	return out;
 }
 
@@ -329,6 +363,10 @@ QDataStream &operator >>(QDataStream &in, Tile &tile) {
 	for (int i = 0; i < (int)FoodType::MaxFoodType; i++) {
 		in >> tile.mFoodLevels[i];
 	}
+	in >> tile.mStressLevel;
 	in >> tile.mWaterLevel;
+	in >> tile.mFoodGenLevel;
+	in >> tile.mWaterGenLevel;
+	in >> tile.mHeat;
 	return in;
 }

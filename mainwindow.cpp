@@ -18,11 +18,10 @@ MainWindow::MainWindow(QWidget *parent) :
 	mUpdateTimer = new QTimer(this);
 	connect(mUpdateTimer, &QTimer::timeout, this, &MainWindow::updateSimulation);
 	mUpdateTimer->start(0);
-	mSaveNum = 0;
 
 	QThreadPool::globalInstance()->setExpiryTimeout(-1);
 
-	Map *map = new Map(500, 300);
+	Map *map = new Map(QImage("map.png"));
 	map->randomFillMapWithEntities(50);
 	ui->mapViewWidget->setMap(map);
 	mRunningAction = ui->mainToolBar->addAction(tr("Running"));
@@ -107,16 +106,29 @@ void MainWindow::updateSimulation() {
 		if (taskData.size() == entitiesPerTask) {
 			EntityUpdateTask *task = new EntityUpdateTask(map, taskData);
 			tasks.append(task);
+#ifndef DEBUG
 			QThreadPool::globalInstance()->start(task);
+#endif
 			taskData.clear();
 		}
 	}
+
+
 	if (!taskData.isEmpty()) {
 		EntityUpdateTask *task = new EntityUpdateTask(map, taskData);
 		tasks.append(task);
+#ifndef DEBUG
 		QThreadPool::globalInstance()->start(task);
+#endif
 	}
+
+#ifdef DEBUG
+	for (EntityUpdateTask *task : tasks) task->run();
+#else
 	QThreadPool::globalInstance()->waitForDone();
+#endif
+
+
 
 	std::multimap<EntityProperty::ValueType, Action*> speedSortedActions;
 	for (EntityUpdateTask *task : tasks) {
@@ -140,8 +152,7 @@ void MainWindow::updateSimulation() {
 	}
 
 	if (map->tick() % 5000 == 0) {
-		map->save("autosave_" + QString::number(mSaveNum));
-		mSaveNum++;
+		map->save("autosave_" + QString::number(map->tick() / 5000));
 	}
 
 	ui->statusBar->showMessage(tr("%1  : Entities: %2   Tasks: %3   Generation %4").arg(map->tick()).arg(map->entities().size()).arg(tasks.size()).arg(generation));
@@ -158,6 +169,7 @@ void MainWindow::showLongestByteCode() {
 	}
 	if (longestByteCodeEntity) {
 		ByteCodeDialog dialog(longestByteCodeEntity);
+		dialog.setWindowTitle(QString::number(longestByteCode));
 		dialog.exec();
 	}
 }

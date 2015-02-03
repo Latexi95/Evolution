@@ -13,7 +13,9 @@ class Action {
 			Attack,
 			Eat,
 			Heal,
-			Reproduce
+			Reproduce,
+			Communicate,
+			Drink
 		};
 
 		Action(Entity *entity, EntityProperty speed);
@@ -76,6 +78,26 @@ class ReproduceAction : public Action {
 		ReproduceAction(Entity *entity, EntityProperty speed);
 		~ReproduceAction();
 		Type type() const { return Reproduce; }
+		EntityProperty exec(Map *map) const;
+};
+
+class CommunicateAction : public Action {
+	public:
+		CommunicateAction(Entity *entity, EntityProperty speed, Entity *target, EntityProperty::ValueType id, EntityProperty value);
+		~CommunicateAction();
+		Type type() const { return Communicate; }
+		EntityProperty exec(Map *) const;
+	private:
+		Entity *mTarget;
+		EntityProperty::ValueType mId;
+		EntityProperty mValue;
+};
+
+class DrinkAction : public Action {
+	public:
+		DrinkAction(Entity *entity, EntityProperty speed);
+		~DrinkAction();
+		Type type() const { return Drink; }
 		EntityProperty exec(Map *map) const;
 };
 

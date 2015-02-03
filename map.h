@@ -6,6 +6,7 @@
 #include "enums.h"
 #include <random>
 #include "entity.h"
+#include <QImage>
 
 class QPainter;
 struct Tile {
@@ -14,7 +15,12 @@ struct Tile {
 	EntityProperty foodLevel(FoodType type) const { return mFoodLevels[(int)type]; }
 	EntityProperty mFoodLevels[(int)FoodType::MaxFoodType];
 	EntityProperty mWaterLevel;
+	EntityProperty mStressLevel;
+	quint8 mWaterGenLevel;
+	quint8 mFoodGenLevel;
+	quint8 mHeat;
 	Entity *mEntity;
+
 };
 
 enum DrawFlags {
@@ -28,7 +34,7 @@ enum DrawFlags {
 class Map {
 	public:
 		Map();
-		Map(int width, int height);
+		Map(const QImage &img);
 		~Map();
 		Tile &tile(Position position);
 		const Tile &tile(Position position) const;
