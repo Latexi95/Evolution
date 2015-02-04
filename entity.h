@@ -7,6 +7,7 @@
 #include <QHash>
 #include <QVector>
 #include <QMap>
+#include <random>
 
 class Action;
 class Map;
@@ -90,6 +91,8 @@ class Entity {
 		EntityProperty &energy();
 		EntityProperty &speed();
 		EntityProperty &hydration();
+		EntityProperty &maxEnergy();
+		EntityProperty &maxHealth();
 
 		void reportActionResult(EntityProperty success);
 
@@ -115,6 +118,15 @@ class Entity {
 
 		EntityProperty loadStore(EntityProperty::ValueType id) const;
 		void saveStore(EntityProperty::ValueType id, const EntityProperty &val);
+		EntityProperty hydrationAdaption() const;
+		void setHydrationAdaption(const EntityProperty &hydrationAdaption);
+
+		EntityProperty foodLevelAdaption() const;
+		void setFoodLevelAdaption(const EntityProperty &foodLevelAdaption);
+
+
+		EntityProperty drinkEnergyCost(EntityProperty speed);
+		bool isInBornState() const;
 	private:
 		const Instruction &instruction() const;
 		void nextInstruction();
@@ -127,6 +139,7 @@ class Entity {
 		EntityProperty mHealth;
 		EntityProperty mMaxHealth;
 		EntityProperty mEnergy;
+		EntityProperty mMaxEnergy;
 		EntityProperty mSpeed;
 		EntityProperty mPower;
 		Position mPosition;
@@ -137,13 +150,21 @@ class Entity {
 		EntityProperty mHydration;
 		quint64 mLifeTime;
 
-		QMap<EntityProperty::ValueType, EntityProperty> mData;
+
+		EntityProperty mHydrationAdaption;
+		EntityProperty mFoodLevelAdaption;
+
+		int mBornState;
+
+		QHash<EntityProperty::ValueType, EntityProperty> mData;
 
 		QVector<Instruction> mByteCode;
 		int mExecutionPoint;
 
 		quint64 mGeneration;
 		int mExecutionEnergyUsageCounter;
+
+		std::mt19937 mRandomizer;
 };
 
 inline const Instruction &Entity::instruction() const {

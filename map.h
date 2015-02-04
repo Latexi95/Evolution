@@ -30,6 +30,8 @@ class Map {
 		Map();
 		Map(const QImage &img);
 		~Map();
+		int width() const;
+		int height() const;
 		Tile &tile(Position position);
 		const Tile &tile(Position position) const;
 		bool isMovableLocation(Position target) const;
@@ -46,10 +48,14 @@ class Map {
 		void deletePass();
 		void randomFillMapWithEntities(int promil);
 
-		Entity *createNewEntity();
+
+		Entity *createAndRandomPlaceEntity();
 		Entity *createNewEntity(Entity *baseEntity);
 
+		Entity *createAndPlaceEntity(Entity *baseEntity);
 		Entity *createDefaultEntity();
+
+
 
 		Entity *entity(Position pos) const;
 
@@ -62,6 +68,9 @@ class Map {
 		void setDrawModeB(int mode);
 		bool noDraw() const;
 	private:
+		void initializeDefaultByteCode();
+
+
 		quint64 mTick;
 		int mWidth;
 		int mHeight;

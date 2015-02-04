@@ -45,6 +45,8 @@ MainWindow::MainWindow(QWidget *parent) :
 		}
 	});
 
+	connect(ui->mapViewWidget, &MapViewWidget::mapPointClicked, this, &MainWindow::mapClicked);
+
 	mShowLongestByteCode = ui->mainToolBar->addAction(tr("Show longest bytecode"));
 	connect(mShowLongestByteCode, &QAction::triggered, this, &MainWindow::showLongestByteCode);
 	mShowLongestByteCode->setEnabled(true);
@@ -59,6 +61,16 @@ MainWindow::MainWindow(QWidget *parent) :
 
 	connect(mDrawing, &QAction::toggled, [this](bool drawing) {
 		ui->mapViewWidget->setDrawing(drawing);
+		if (!drawing) {
+			ui->mapViewWidget->map()->setDrawModeR(0);
+			ui->mapViewWidget->map()->setDrawModeG(0);
+			ui->mapViewWidget->map()->setDrawModeB(0);
+		}
+		else {
+			ui->mapViewWidget->map()->setDrawModeR(mDrawModeR->currentIndex());
+			ui->mapViewWidget->map()->setDrawModeG(mDrawModeG->currentIndex());
+			ui->mapViewWidget->map()->setDrawModeB(mDrawModeB->currentIndex());
+		}
 		drawIfNotRunning();
 	});
 
@@ -140,7 +152,7 @@ void MainWindow::showOldestByteCode() {
 	quint64 oldest = 0;
 	for (Entity *e : ui->mapViewWidget->map()->entities()) {
 		if (e->lifeTime() > oldest) {
-			oldest = e->byteCode().size();
+			oldest = e->lifeTime();
 			entity = e;
 		}
 	}
@@ -185,6 +197,30 @@ void MainWindow::showResults(const WorkResults &results) {
 							   .arg(results.mTotalTime ? (results.mExecutionTime * 100 / results.mTotalTime) : 0));
 }
 
+void MainWindow::mapClicked(QPoint mapPoint) {
+	if (!mWorker) {
+		Map *map = ui->mapViewWidget->map();
+		const Tile &tile = map->tile(Position(mapPoint.x(), mapPoint.y()));
+		QString msg = tr("Food V:%1 M:%2  Water:%3  Heat:%4").arg(
+					QString::number(tile.foodLevel(FoodType::V).value()),
+					QString::number(tile.foodLevel(FoodType::M).value()),
+					QString::number(tile.mWaterLevel.value()),
+					QString::number(tile.mHeat));
+		if (tile.mEntity) {
+			msg += tr("  Health:%1  Energy:%2  Hydration:%3  Gen:%4  Age:%5  Adaptation F:%6 H:%7").arg(
+						QString::number(tile.mEntity->health().value()),
+						QString::number(tile.mEntity->energy().value()),
+						QString::number(tile.mEntity->hydration().value()),
+						QString::number(tile.mEntity->generation()),
+						QString::number(tile.mEntity->lifeTime()),
+						QString::number(tile.mEntity->foodLevelAdaption().value()),
+						QString::number(tile.mEntity->hydrationAdaption().value()));
+		}
+		ui->statusBar->showMessage(msg);
+
+	}
+}
+
 void MainWindow::addDrawModeItems(QComboBox *comboBox) {
 	comboBox->addItem(tr("None"));
 	comboBox->addItem(tr("Entity [Energy]"));
@@ -193,6 +229,8 @@ void MainWindow::addDrawModeItems(QComboBox *comboBox) {
 	comboBox->addItem(tr("Water level"));
 	comboBox->addItem(tr("Food [V] generation"));
 	comboBox->addItem(tr("Water generation"));
+	comboBox->addItem(tr("Heat"));
+	comboBox->addItem(tr("New entity"));
 }
 
 void MainWindow::closeEvent(QCloseEvent *e) {

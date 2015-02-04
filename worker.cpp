@@ -32,7 +32,7 @@ void Worker::run() {
 			if (taskData.size() == entitiesPerTask) {
 				EntityUpdateTask *task = new EntityUpdateTask(mMap, taskData);
 				tasks.append(task);
-	#ifndef DEBUG
+	#ifndef NO_THREADS
 				mThreadPool.start(task);
 	#endif
 				taskData.clear();
@@ -43,7 +43,7 @@ void Worker::run() {
 		if (!taskData.isEmpty()) {
 			EntityUpdateTask *task = new EntityUpdateTask(mMap, taskData);
 			tasks.append(task);
-	#ifndef DEBUG
+	#ifndef NO_THREADS
 			mThreadPool.start(task);
 	#endif
 		}
@@ -53,7 +53,7 @@ void Worker::run() {
 			mLastUpdate.restart();
 		}
 
-	#ifdef DEBUG
+	#ifdef NO_THREADS
 		for (EntityUpdateTask *task : tasks) task->run();
 	#else
 		mThreadPool.waitForDone();
@@ -64,26 +64,36 @@ void Worker::run() {
 		std::multimap<EntityProperty::ValueType, Action*> speedSortedActions;
 		for (EntityUpdateTask *task : tasks) {
 			for (Action *action : task->actions()) {
-				speedSortedActions.insert(std::pair<EntityProperty::ValueType, Action*>(action->speed().value(), action));
+				if (action->shouldBeSpeedSorted())
+					speedSortedActions.insert(std::pair<EntityProperty::ValueType, Action*>(std::max(action->speed().value(), action->entity()->energy().value()), action));
+				else {
+					EntityProperty result = action->exec(mMap);
+					action->entity()->reportActionResult(result);
+					delete action;
+				}
 			}
 			delete task;
 		}
 
-		for (auto it = speedSortedActions.begin(); it != speedSortedActions.end(); ++it) {
-			EntityProperty result = it->second->exec(mMap);
-			it->second->entity()->reportActionResult(result);
-			delete it->second;
+		if (!speedSortedActions.empty()) {
+			auto it = speedSortedActions.end();
+			do {
+				--it;
+				EntityProperty result = it->second->exec(mMap);
+				it->second->entity()->reportActionResult(result);
+				delete it->second;
+			} while (it != speedSortedActions.begin());
 		}
 
 		mMap->deletePass();
 		if (mMap->entities().size() < 5000) {
 			for (int i = 0; i < 30; i++) {
-				mMap->createNewEntity();
+				mMap->createAndRandomPlaceEntity();
 			}
 		}
 		totalEndTime = std::chrono::high_resolution_clock::now();
 
-		if (mMap->tick() % 5000 == 0) {
+		if (mMap->tick() % 20000 == 0) {
 			mMap->save("autosave_" + QString::number(mMap->tick() / 5000));
 		}
 

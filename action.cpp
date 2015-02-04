@@ -28,7 +28,7 @@ MoveAction::~MoveAction() {
 EntityProperty MoveAction::exec(Map *map) const {
 	int waterGenLevel = map->tile(mEntity->position()).mWaterGenLevel;
 	waterGenLevel *= waterGenLevel;
-	mEntity->energy() -= mSpeed / 5 + 6 + waterGenLevel / 2048;
+	mEntity->energy() -= mSpeed / 5 + 6 + waterGenLevel / 1024;
 	if (map->move(mEntity, mEntity->position().targetLocation(mDirection, 1))) {
 		return EntityProperty::max();
 	}
@@ -55,20 +55,19 @@ EntityProperty AttackAction::exec(Map *map) const {
 	if (map->isPositionOnMap(targetPos)) {
 		Tile &tile = map->tile(targetPos);
 		int waterGenLevel = map->tile(mEntity->position()).mWaterGenLevel;
-		mEntity->energy() -= mSpeed / 2 + 2 + waterGenLevel / 2048;
+		waterGenLevel *= waterGenLevel;
+		mEntity->energy() -= mSpeed / 4 + 1 + waterGenLevel / 2048;
 		if (!tile.mEntity) {//Nothing in target tile
 			return EntityProperty::min();
 		}
 
 
-		EntityProperty usedPower = mEntity->energy().take(mPower);
+		EntityProperty usedPower = mEntity->energy().take(mPower / 2 + 10);
 
-		EntityProperty damageDealt = tile.mEntity->health().take((usedPower * 4).greater(1));
+		EntityProperty damageDealt = tile.mEntity->health().take((usedPower * 8).greater(2));
 		return damageDealt;
 	}
-	else {
-		return EntityProperty::min();
-	}
+	return EntityProperty::min();
 
 }
 
@@ -92,8 +91,12 @@ EatAction::~EatAction() {
 EntityProperty EatAction::exec(Map *map) const {
 	Tile &tile = map->tile(mEntity->position());
 	EntityProperty usedEnergy = mEntity->energy().take(mSpeed / 2 + 5) + 1;
-	EntityProperty eaten = tile.mFoodLevels[(int)mFoodType].take(usedEnergy * 50);
-	mEntity->energy() += eaten / 15;
+	EntityProperty tryEat = usedEnergy.sqrt() * ((tile.mFoodLevels[(int)mFoodType] / (mEntity->foodLevelAdaption() + 20)).square() / 25 + (tile.mFoodLevels[(int)mFoodType] / 5 * (mEntity->foodLevelAdaption() / 2 + 3)/ 5));
+	EntityProperty eaten = tile.mFoodLevels[(int)mFoodType].take(tryEat) * 2;
+	mEntity->energy() += eaten.sqrt();
+	if (mEntity->energy() > mEntity->maxEnergy()) {
+		mEntity->energy() = mEntity->maxEnergy();
+	}
 	return eaten;
 }
 
@@ -113,6 +116,9 @@ HealAction::~HealAction() {
 EntityProperty HealAction::exec(Map *) const {
 	EntityProperty used = mEntity->energy().take(mSpeed / 2 + 5);
 	mEntity->health() += used / 2;
+	if (mEntity->health() > mEntity->maxHealth()) {
+		mEntity->health() = mEntity->maxHealth();
+	}
 	return used;
 }
 
@@ -126,14 +132,15 @@ ReproduceAction::~ReproduceAction() {
 
 EntityProperty ReproduceAction::exec(Map *map) const {
 	mEntity->energy() -= 20;
-	if (mEntity->energy() > mSpeed * 3) {
-		Entity *child = map->createNewEntity(mEntity);
+	if (mEntity->energy() > mSpeed * 4 && mEntity->hydration() > mSpeed * 3) {
+		Entity *child = map->createAndPlaceEntity(mEntity);
 		if (!child) {
 			return EntityProperty::min();
 		}
 
 		child->energy() = mEntity->energy().take(mSpeed * 3) / 2;
-		child->hydration() = mEntity->hydration().take(mSpeed * 10);
+		child->hydration() = mEntity->hydration().take(mSpeed * 3);
+		child->health() = mEntity->maxHealth() / 7;
 
 		return child->energy();
 	}
@@ -170,8 +177,8 @@ DrinkAction::~DrinkAction() {
 
 EntityProperty DrinkAction::exec(Map *map) const {
 	Tile &t = map->tile(entity()->position());
-	EntityProperty energyUsed = entity()->energy().take(mSpeed / 2 + 4);
-	EntityProperty water = t.mWaterLevel.take((energyUsed + 10) * 5);
+	EntityProperty energyUsed = entity()->energy().take(mEntity->drinkEnergyCost(mSpeed));
+	EntityProperty water = (int)t.mWaterLevel.take((energyUsed + 10) * 5).value() * 60 / (20 + mEntity->hydrationAdaption().value());
 	entity()->hydration() += water;
 	return water;
 }

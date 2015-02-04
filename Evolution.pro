@@ -14,15 +14,15 @@ TEMPLATE = app
 CONFIG += c++11
 
 
-QMAKE_CXXFLAGS_RELEASE = -O3
+#QMAKE_CXXFLAGS_RELEASE = -O3
 
-QMAKE_CXXFLAGS_RELEASE += -g
-QMAKE_CFLAGS_RELEASE += -g
-QMAKE_LFLAGS_RELEASE =
+#QMAKE_CXXFLAGS_RELEASE += -g
+#QMAKE_CFLAGS_RELEASE += -g
+#QMAKE_LFLAGS_RELEASE =
 
-CONFIG(debug, debug|release) {
-    DEFINES += DEBUG
-}
+#CONFIG(debug, debug|release) {
+#    DEFINES += DEBUG
+#}
 
 SOURCES += main.cpp\
         mainwindow.cpp \

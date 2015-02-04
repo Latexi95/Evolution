@@ -30,6 +30,7 @@ class EntityProperty {
 		bool isMax() const;
 		EntityProperty take(EntityProperty target);
 		EntityProperty sqrt() const;
+		EntityProperty square() const;
 
 		EntityProperty greater(EntityProperty greater);
 
@@ -168,5 +169,11 @@ inline EntityProperty EntityProperty::min() {
 	return EntityProperty(std::numeric_limits<ValueType>::min());
 }
 
+inline EntityProperty EntityProperty::square() const {
+	if (this->mValue < std::numeric_limits<ValueType>::max() / 2) {
+		return this->mValue * this->mValue;
+	}
+	return max();
+}
 
 #endif // ENTITYPROPERTY_H

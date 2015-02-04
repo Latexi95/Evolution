@@ -20,6 +20,8 @@ EntityProperty::~EntityProperty() {
 
 
 
+
+
 QDataStream &operator << (QDataStream &out, const EntityProperty &p) {
 	out << p.value();
 	return out;

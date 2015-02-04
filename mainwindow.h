@@ -25,6 +25,8 @@ class MainWindow : public QMainWindow {
 
 		void updateStopped();
 		void showResults(const WorkResults &results);
+
+		void mapClicked(QPoint mapPoint);
 	private:
 		void addDrawModeItems(QComboBox *comboBox);
 		void closeEvent(QCloseEvent *e);

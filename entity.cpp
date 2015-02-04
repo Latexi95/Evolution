@@ -3,24 +3,28 @@
 #include "action.h"
 #include <cassert>
 #include <QDataStream>
+#include <iostream>
 
 Entity::Entity() :
 	mHealth(100),
 	mMaxHealth(150),
 	mEnergy(20),
+	mMaxEnergy(100),
 	mSpeed(10),
 	mPower(10),
 	mHydration(100),
 	mLifeTime(0),
+	mHydrationAdaption(20),
+	mFoodLevelAdaption(20),
+	mBornState(-20),
 	mGeneration(1),
-	mExecutionEnergyUsageCounter(0) {
+	mExecutionEnergyUsageCounter(0),
+	mRandomizer(std::random_device()()){
 
 }
 
 Entity::~Entity() {
-
 }
-
 Position Entity::position() const {
 	return mPosition;
 }
@@ -31,26 +35,33 @@ void Entity::setPosition(const Position &position) {
 
 Action *Entity::update(const Map *map) {
 	mLifeTime++;
+	if (mBornState >= 0) {
+		if (mHydration == 0) {
+			mEnergy -= 3;
+			mHealth -= 4;
+		}
+		else if (mHydration < 50 - mHydrationAdaption.sqrt().value()) {
+			mEnergy -= 1;
+		}
+		std::uniform_int_distribution<> dist(0, (int)map->tile(position()).mHeat * 150 / (6 + mHydrationAdaption.sqrt().value()));
+		mHydration -= EntityProperty(22 + dist(mRandomizer) / 50) - mHydrationAdaption.sqrt();
 
-	mHydration -= 32 + map->tile(position()).mHeat / 8;
-	if (mHydration == 0) {
-		mEnergy -= 20;
-		mHealth -= 1;
-	}
-	else if (mHydration < 50) {
-		mEnergy -= 5;
-	}
 
-	int instructionCounter;
-	const int maxInstructions = 1000;
-	Action *action = exec(map, maxInstructions, instructionCounter);
-	mExecutionEnergyUsageCounter += mByteCode.size() + instructionCounter;
-	while (mExecutionEnergyUsageCounter > 500) {
+		int instructionCounter;
+		const int maxInstructions = 1000;
+		Action *action = exec(map, maxInstructions, instructionCounter);
+		mExecutionEnergyUsageCounter += mByteCode.size() + instructionCounter + mMaxHealth.value() + mMaxEnergy.value();
+		while (mExecutionEnergyUsageCounter > 600) {
+			mEnergy -= 1;
+			mExecutionEnergyUsageCounter -= 600;
+		}
 		mEnergy -= 1;
-		mExecutionEnergyUsageCounter -= 500;
+		return action;
 	}
-	mEnergy -= 1;
-	return action;
+	else {
+		mBornState++;
+		return 0;
+	}
 }
 
 EntityProperty &Entity::health() {
@@ -67,6 +78,13 @@ EntityProperty &Entity::speed() {
 
 EntityProperty &Entity::hydration() {
 	return mHydration;
+}
+EntityProperty &Entity::maxEnergy() {
+	return mMaxEnergy;
+}
+
+EntityProperty &Entity::maxHealth() {
+	return mMaxHealth;
 }
 
 void Entity::reportActionResult(EntityProperty success) {
@@ -333,6 +351,32 @@ FoodType Entity::foodTypeFromParam(EntityProperty::ValueType param) {
 	if (param) return FoodType::M;
 	return FoodType::V;
 }
+EntityProperty Entity::foodLevelAdaption() const {
+	return mFoodLevelAdaption;
+}
+
+void Entity::setFoodLevelAdaption(const EntityProperty &foodLevelAdaption) {
+	mFoodLevelAdaption = foodLevelAdaption;
+}
+
+EntityProperty Entity::drinkEnergyCost(EntityProperty speed) {
+	std::uniform_int_distribution<> dist(0, (int)hydrationAdaption().value() * 10);
+	return speed / 2 + 1 + dist(mRandomizer) / 50;
+}
+
+bool Entity::isInBornState() const {
+	return mBornState < 0;
+
+}
+
+EntityProperty Entity::hydrationAdaption() const {
+	return mHydrationAdaption;
+}
+
+void Entity::setHydrationAdaption(const EntityProperty &hydrationAdaption) {
+	mHydrationAdaption = hydrationAdaption;
+}
+
 
 quint64 Entity::lifeTime() const {
 	return mLifeTime;
@@ -350,6 +394,7 @@ void Entity::save(QDataStream &stream, int format) const {
 	stream << mHealth;
 	stream << mMaxHealth;
 	stream << mEnergy;
+	stream << mMaxEnergy;
 	stream << mSpeed;
 	stream << mPosition;
 	stream << mTargetMarker;
@@ -361,12 +406,16 @@ void Entity::save(QDataStream &stream, int format) const {
 	stream << mByteCode;
 	stream << mExecutionPoint;
 	stream << mGeneration;
+	stream << mHydrationAdaption;
+	stream << mFoodLevelAdaption;
+	stream << mBornState;
 }
 
 void Entity::load(QDataStream &stream, int format) {
 	stream >> mHealth;
 	stream >> mMaxHealth;
 	stream >> mEnergy;
+	stream >> mMaxEnergy;
 	stream >> mSpeed;
 	stream >> mPosition;
 	stream >> mTargetMarker;
@@ -378,6 +427,9 @@ void Entity::load(QDataStream &stream, int format) {
 	stream >> mByteCode;
 	stream >> mExecutionPoint;
 	stream >> mGeneration;
+	stream >> mHydrationAdaption;
+	stream >> mFoodLevelAdaption;
+	stream >> mBornState;
 }
 
 EntityProperty Entity::loadStore(EntityProperty::ValueType id) const {
@@ -404,7 +456,7 @@ void Entity::setByteCode(const QVector<Instruction> &byteCode) {
 bool Entity::deletePass() {
 
 	if (mEnergy == EntityProperty::min()) {//No Energy
-		mHealth -= 3;
+		mHealth -= 10;
 	}
 	if (mHealth == EntityProperty::min()) {
 		return true;

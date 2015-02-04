@@ -16,31 +16,7 @@ Map::Map() :
 	mDrawModes[1] = 2;
 	mDrawModes[2] = 3;
 
-	QVector<Instruction> byteCode;
-	byteCode.append(Instruction(OpCode::Drink, 0));
-	byteCode.append(Instruction(OpCode::Eat, 0));
-	byteCode.append(Instruction(OpCode::ResetTargetMarker, 0));
-	byteCode.append(Instruction(OpCode::MoveTargetMarker, 0));
-	byteCode.append(Instruction(OpCode::GetFoodLevel, 0));
-	byteCode.append(Instruction(OpCode::CopyResultToPrimary, 0));
-	byteCode.append(Instruction(OpCode::LiteralSecondary, 4000));
-	byteCode.append(Instruction(OpCode::Greater, 0));
-	byteCode.append(Instruction(OpCode::CopyResultToPrimary, 0));
-	byteCode.append(Instruction(OpCode::ConditionalJump, 2));
-	byteCode.append(Instruction(OpCode::Move, 2));
-	byteCode.append(Instruction(OpCode::Jump, 1));
-	byteCode.append(Instruction(OpCode::Move, 0));
-
-
-	//If energy <= 30 then reproduce
-	byteCode.append(Instruction(OpCode::LiteralPrimary, 30));
-	byteCode.append(Instruction(OpCode::GetEnergy, 0));
-	byteCode.append(Instruction(OpCode::CopyResultToSecondary, 0));
-	byteCode.append(Instruction(OpCode::Greater, 0));
-	byteCode.append(Instruction(OpCode::ConditionalJump, 1));
-	byteCode.append(Instruction(OpCode::Reproduce, 0));
-
-	mDefaultByteCode = byteCode;
+	initializeDefaultByteCode();
 
 }
 
@@ -72,31 +48,7 @@ Map::Map(const QImage &img) :
 		}
 	}
 
-	QVector<Instruction> byteCode;
-	byteCode.append(Instruction(OpCode::Drink, 0));
-	byteCode.append(Instruction(OpCode::Eat, 0));
-	byteCode.append(Instruction(OpCode::ResetTargetMarker, 0));
-	byteCode.append(Instruction(OpCode::MoveTargetMarker, 0));
-	byteCode.append(Instruction(OpCode::GetFoodLevel, 0));
-	byteCode.append(Instruction(OpCode::CopyResultToPrimary, 0));
-	byteCode.append(Instruction(OpCode::LiteralSecondary, 4000));
-	byteCode.append(Instruction(OpCode::Greater, 0));
-	byteCode.append(Instruction(OpCode::CopyResultToPrimary, 0));
-	byteCode.append(Instruction(OpCode::ConditionalJump, 2));
-	byteCode.append(Instruction(OpCode::Move, 2));
-	byteCode.append(Instruction(OpCode::Jump, 1));
-	byteCode.append(Instruction(OpCode::Move, 0));
-
-
-	//If energy <= 30 then reproduce
-	byteCode.append(Instruction(OpCode::LiteralPrimary, 40));
-	byteCode.append(Instruction(OpCode::GetEnergy, 0));
-	byteCode.append(Instruction(OpCode::CopyResultToSecondary, 0));
-	byteCode.append(Instruction(OpCode::Greater, 0));
-	byteCode.append(Instruction(OpCode::ConditionalJump, 1));
-	byteCode.append(Instruction(OpCode::Reproduce, 0));
-
-	mDefaultByteCode = byteCode;
+	initializeDefaultByteCode();
 
 	mDrawBuffers[0] = QImage(mWidth, mHeight, QImage::Format_RGB32);
 	mDrawBuffers[1] = QImage(mWidth, mHeight, QImage::Format_RGB32);
@@ -104,6 +56,14 @@ Map::Map(const QImage &img) :
 
 Map::~Map() {
 	qDeleteAll(mEntities);
+}
+
+int Map::width() const {
+	return mWidth;
+}
+
+int Map::height() const {
+	return mHeight;
 }
 
 Tile &Map::tile(Position position) {
@@ -165,6 +125,7 @@ int normalizeValue(EntityProperty property) {
 }
 
 QImage Map::draw() {
+	if (noDraw()) return QImage();
 	QImage &curImage = mDrawBuffers[mCurrentBuffer];
 	for (int y = 0; y < mHeight; y++) {
 		QRgb *line = (QRgb*)curImage.scanLine(y);
@@ -194,6 +155,13 @@ QImage Map::draw() {
 						break;
 					case 6:
 						colors[i] = t.mWaterGenLevel;
+						break;
+					case 7:
+						colors[i] = t.mHeat;
+						break;
+					case 8:
+						if (t.mEntity && t.mEntity->isInBornState())
+							colors[i] = 255;
 					default:
 						break;
 				}
@@ -210,12 +178,12 @@ void Map::updateFoodLevels() {
 		for (int x = 0; x < mWidth; x++) {
 			Tile &t = tile(Position(x, y));
 			t.mWaterLevel += EntityProperty(t.mWaterGenLevel) - t.mWaterLevel / t.mWaterGenLevel;
-			t.mFoodLevels[(int)FoodType::V] += std::max(t.mFoodGenLevel - (int)t.mStressLevel.value() * t.mStressLevel.value(), 0);
+			t.mFoodLevels[(int)FoodType::V] += std::max((int)sqrt(t.mFoodGenLevel * 10) - (int)t.mStressLevel.value() * t.mStressLevel.value(), 0);
 			if (t.mEntity)
 				t.mStressLevel += 3;
 			else
 				t.mStressLevel -= 1;
-			t.mFoodLevels[(int)FoodType::V] -= (t.mFoodLevels[(int)FoodType::V] / 2 + t.mFoodLevels[(int)FoodType::V]).sqrt() / 60;
+			t.mFoodLevels[(int)FoodType::V] -= (t.mFoodLevels[(int)FoodType::V] / 10 * t.mFoodLevels[(int)FoodType::V] / 10) / 10000;
 			t.mFoodLevels[(int)FoodType::M] -= 10;
 		}
 	}
@@ -256,16 +224,24 @@ void Map::randomFillMapWithEntities(int promil) {
 	}
 }
 
-Entity *Map::createNewEntity() {
+Entity *Map::createAndRandomPlaceEntity() {
+	Entity *entity = 0;
 	if (mEntities.empty()) {
-		Entity *entity = createDefaultEntity();
-		entity->setPosition(Position(qrand() % mWidth, qrand() % mHeight));
-		addEntity(entity, entity->position());
-		return entity;
+		entity = createDefaultEntity();
 	}
-	std::uniform_int_distribution<> baseDist(0, mEntities.size() - 1);
-	Entity *baseEntity = mEntities.at(baseDist(mRandomGenerator));
-	return createNewEntity(baseEntity);
+	else {
+		std::uniform_int_distribution<> baseDist(0, mEntities.size() - 1);
+		Entity *baseEntity = mEntities.at(baseDist(mRandomGenerator));
+		entity = createNewEntity(baseEntity);
+	}
+	Position pos = findValidLocation(Position(qrand() % mWidth, qrand() % mHeight), 10);
+	if (pos.isErrorValue()) {
+		delete entity;
+		return 0;
+	}
+
+	addEntity(entity, pos);
+	return entity;
 }
 
 Entity *Map::createNewEntity(Entity *baseEntity) {
@@ -282,7 +258,7 @@ Entity *Map::createNewEntity(Entity *baseEntity) {
 			}
 
 		}
-		else if (mod < 9) {
+		else if (mod < 9 && byteCode.size() > 10) {
 			byteCode.removeAt(qrand() % byteCode.size());
 		}
 		else {
@@ -290,25 +266,65 @@ Entity *Map::createNewEntity(Entity *baseEntity) {
 		}
 	}
 	Entity *newEntity = new Entity();
+	newEntity->maxEnergy() = baseEntity->maxEnergy();
+	newEntity->maxHealth() = baseEntity->maxHealth();
+	newEntity->setHydrationAdaption(baseEntity->hydrationAdaption());
+	newEntity->setFoodLevelAdaption(baseEntity->foodLevelAdaption());
+	switch (qrand() % 30) {
+		case 1:
+			newEntity->maxHealth() += 1;
+			break;
+		case 2:
+			newEntity->maxHealth() -= 1;
+			break;
+		case 4:
+			newEntity->maxEnergy() += 1;
+			break;
+		case 6:
+			newEntity->maxEnergy() -= 1;
+			break;
+		case 7:
+			newEntity->setHydrationAdaption(newEntity->hydrationAdaption() + 1);
+			break;
+		case 8:
+			newEntity->setHydrationAdaption(newEntity->hydrationAdaption() - 1);
+			break;
+		case 9:
+			newEntity->setFoodLevelAdaption(newEntity->foodLevelAdaption() + 1);
+			break;
+		case 10:
+			newEntity->setFoodLevelAdaption(newEntity->foodLevelAdaption() - 1);
+			break;
+		default:
+			break;
+	}
+
 	newEntity->setGeneration(baseEntity->generation() + 1);
 	newEntity->setByteCode(byteCode);
+	return newEntity;
+}
 
-	Position p = findValidLocation(baseEntity->position() + Position(qrand() % 20 - 10, qrand() % 20 - 10), 10);
+Entity *Map::createAndPlaceEntity(Entity *baseEntity) {
+	Entity *e = createNewEntity(baseEntity);
+	if (!e) return 0;
+	Position p = findValidLocation(baseEntity->position(), 3);
 	if (!p.isErrorValue()) {
-		addEntity(newEntity, p);
-		return newEntity;
+		addEntity(e, p);
+		return e;
 	}
 	else {
-		delete newEntity;
+		delete e;
 		return 0;
 	}
 }
+
 
 Entity *Map::createDefaultEntity() {
 	Entity *entity = new Entity();
 	entity->setByteCode(mDefaultByteCode);
 	return entity;
 }
+
 
 static const int VERSION_NUMBER = 1;
 void Map::save(const QString &path) {
@@ -375,6 +391,56 @@ void Map::setDrawModeB(int mode) {
 
 bool Map::noDraw() const {
 	return mDrawModes[0] == 0 && mDrawModes[1] == 0 && mDrawModes[2] == 0;
+}
+
+void Map::initializeDefaultByteCode() {
+	QVector<Instruction> byteCode;
+	byteCode.append(Instruction(OpCode::Drink, 0));
+	byteCode.append(Instruction(OpCode::Eat, 0));
+
+
+	byteCode.append(Instruction(OpCode::ResetTargetMarker, 0));
+	byteCode.append(Instruction(OpCode::MoveTargetMarker, 0));
+	byteCode.append(Instruction(OpCode::ContainsEntity, 0));
+	byteCode.append(Instruction(OpCode::CopyResultToPrimary, 0));
+	byteCode.append(Instruction(OpCode::ConditionalJump, 2));
+	byteCode.append(Instruction(OpCode::Move, 0));
+	byteCode.append(Instruction(OpCode::Jump, 20));
+
+	byteCode.append(Instruction(OpCode::ResetTargetMarker, 0));
+	byteCode.append(Instruction(OpCode::MoveTargetMarker, 1));
+	byteCode.append(Instruction(OpCode::ContainsEntity, 0));
+	byteCode.append(Instruction(OpCode::CopyResultToPrimary, 0));
+	byteCode.append(Instruction(OpCode::ConditionalJump, 2));
+	byteCode.append(Instruction(OpCode::Move, 1));
+	byteCode.append(Instruction(OpCode::Jump, 13));
+
+	byteCode.append(Instruction(OpCode::ResetTargetMarker, 0));
+	byteCode.append(Instruction(OpCode::MoveTargetMarker, 2));
+	byteCode.append(Instruction(OpCode::ContainsEntity, 0));
+	byteCode.append(Instruction(OpCode::CopyResultToPrimary, 0));
+	byteCode.append(Instruction(OpCode::ConditionalJump, 2));
+	byteCode.append(Instruction(OpCode::Move, 2));
+	byteCode.append(Instruction(OpCode::Jump, 6));
+
+	byteCode.append(Instruction(OpCode::ResetTargetMarker, 0));
+	byteCode.append(Instruction(OpCode::MoveTargetMarker, 3));
+	byteCode.append(Instruction(OpCode::ContainsEntity, 0));
+	byteCode.append(Instruction(OpCode::CopyResultToPrimary, 0));
+	byteCode.append(Instruction(OpCode::ConditionalJump, 1));
+	byteCode.append(Instruction(OpCode::Move, 3));
+
+
+
+	//If energy >= 40 then reproduce
+	byteCode.append(Instruction(OpCode::LiteralPrimary, 40));
+	byteCode.append(Instruction(OpCode::GetEnergy, 0));
+	byteCode.append(Instruction(OpCode::CopyResultToSecondary, 0));
+	byteCode.append(Instruction(OpCode::Greater, 0));
+	byteCode.append(Instruction(OpCode::ConditionalJump, 1));
+	byteCode.append(Instruction(OpCode::Reproduce, 0));
+
+	mDefaultByteCode = byteCode;
 }
 
 
